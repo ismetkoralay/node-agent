@@ -1,0 +1,10 @@
+{
+    "name": "@node-agent/tools",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "dependencies": {
+        "@node-agent/core": "workspace:*"
+    }
+}

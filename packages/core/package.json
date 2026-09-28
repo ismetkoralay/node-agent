@@ -1,0 +1,7 @@
+{
+    "name": "@node-agent/core",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    }
+}
