@@ -5,12 +5,8 @@
     "module": "nodenext", // Match Node's real module system (ESM/CJS decided by package.json "type")
     "moduleResolution": "nodenext", // Resolve imports the way Node does, including explicit file extensions
     "target": "esnext", // Node runs the source directly and tsc never emits, so no downleveling is needed
-    "lib": [
-      "esnext"
-    ], // We don't need DOM or other browser APIs, just the latest JS features
-    "types": [
-      "node"
-    ], // Load only @types/node (process, node:fs, Buffer…); other @types packages are not picked up automatically
+    "lib": ["esnext"], // We don't need DOM or other browser APIs, just the latest JS features
+    "types": ["node"], // Load only @types/node (process, node:fs, Buffer…); other @types packages are not picked up automatically
     "verbatimModuleSyntax": true, // Type-only imports must use `import type`, so Node's type stripping never sees a type as a value
     "erasableSyntaxOnly": true, // Forbids enum, namespace and constructor parameter properties, which Node cannot strip
     "allowImportingTsExtensions": true, // Lets sources import "./types.ts", the path Node actually loads

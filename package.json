@@ -2,7 +2,9 @@
   "name": "node-agent",
   "private": true,
   "scripts": {
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check --error-on-warnings .",
+    "format": "biome check --write ."
   },
   "author": "Ismet Koralay",
   "engines": {
@@ -18,6 +20,7 @@
   "packageManager": "pnpm@12.6.0",
   "type": "module",
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@types/node": "^26.6.3",
     "typescript": "^7.0.2"
   }
