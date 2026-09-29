@@ -2,7 +2,7 @@
   "name": "node-agent",
   "private": true,
   "scripts": {
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc --noEmit && pnpm -r typecheck",
     "lint": "biome check --error-on-warnings .",
     "format": "biome check --write .",
     "test": "vitest run",
