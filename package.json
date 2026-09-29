@@ -2,7 +2,7 @@
   "name": "node-agent",
   "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "pnpm -r typecheck"
   },
   "author": "Ismet Koralay",
   "engines": {
@@ -16,5 +16,9 @@
     }
   },
   "packageManager": "pnpm@12.6.0",
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
 }
