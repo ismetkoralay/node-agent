@@ -2,6 +2,9 @@
     "name": "@node-agent/core",
     "type": "module",
     "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
     "version": "0.0.0",
     "exports": {
         ".": "./src/index.ts"
