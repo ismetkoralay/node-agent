@@ -1,15 +1,15 @@
 {
-    "name": "@node-agent/provider-ollama",
-    "type": "module",
-    "private": true,
-    "scripts": {
-        "typecheck": "tsc --noEmit"
-    },
-    "version": "0.0.0",
-    "exports": {
-        ".": "./src/index.ts"
-    },
-    "dependencies": {
-        "@node-agent/core": "workspace:*"
-    }
+  "name": "@node-agent/provider-ollama",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "version": "0.0.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@node-agent/core": "workspace:*"
+  }
 }
