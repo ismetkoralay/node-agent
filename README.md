@@ -35,6 +35,10 @@ pnpm test        # vitest run
 
 Other scripts: `pnpm format` (apply Biome fixes) and `pnpm test:watch`.
 
+## Conventions
+
+Message types in `@node-agent/core` keep OpenAI's snake_case field names (`tool_calls`, `tool_call_id`) because that shape goes to the database and the API unchanged; every other type we define uses camelCase (`finishReason`, `promptTokens`).
+
 ## Roadmap
 
 Scope and progress for each step live in its issue.
