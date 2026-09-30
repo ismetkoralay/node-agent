@@ -1,8 +1,8 @@
-## Ne değişti
+## What changed
 
 - 
 
-## Nasıl test edildi
+## How it was tested
 
 - 
 
