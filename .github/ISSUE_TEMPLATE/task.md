@@ -1,22 +1,22 @@
 ---
 name: Task
-about: Tek bir PR'da bitecek iş parçası
+about: A unit of work that fits in a single PR
 title: ""
 labels: ""
 assignees: ""
 ---
 
-**Önce:** <!-- Bu issue'dan önce bitmesi gereken issue'lar, örn. 1.1. Yoksa "-" yaz. -->
+**Depends on:** <!-- Issues that must be finished before this one, e.g. 1.1. Write "-" if none. -->
 
-## Amaç
+## Goal
 
-<!-- Bu iş neden yapılıyor? Bir iki cümle. -->
+<!-- Why is this work being done? One or two sentences. -->
 
-## Yapılacaklar
+## Tasks
 
 - 
 
-## Kapsam dışı
+## Out of scope
 
 - 
 
@@ -24,6 +24,6 @@ assignees: ""
 
 - [ ] 
 
-## İpuçları
+## Hints
 
 - 
