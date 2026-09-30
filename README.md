@@ -1,5 +1,5 @@
 # node-agent
-[[CI](https://github.com/ismetkoralay/node-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ismetkoralay/node-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/ismetkoralay/node-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ismetkoralay/node-agent/actions/workflows/ci.yml)
 
 A TypeScript monorepo for building an LLM agent runtime on Node.js: a provider abstraction over local models served by Ollama, a tool-calling agent loop, and an HTTP API on top. It exists as a hands-on, end-to-end exercise in building an agent without a heavyweight framework, with every layer (types, provider, tools, loop, API, persistence, streaming) small enough to read.
 
