@@ -10,6 +10,8 @@ test('keeps the original error as cause', () => {
   });
 
   expect(err.cause).toBe(original);
+  expect(err.provider).toBe('ollama');
+  expect(err.retryable).toBe(true);
 });
 
 test('is an AgentError and an Error', () => {
@@ -36,4 +38,5 @@ test('has no cause when none is given', () => {
   const err = new ProviderError('x', { provider: 'ollama', retryable: false });
 
   expect('cause' in err).toBe(false);
+  expect(err.cause).toBeUndefined();
 });
