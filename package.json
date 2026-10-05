@@ -15,11 +15,11 @@
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "12.6.0",
+      "version": "12.8.1",
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@12.6.0",
+  "packageManager": "pnpm@12.8.1",
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

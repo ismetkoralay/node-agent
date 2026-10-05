@@ -10,6 +10,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@node-agent/core": "workspace:*"
+    "@node-agent/core": "workspace:*",
+    "ollama": "^0.6.4"
   }
 }

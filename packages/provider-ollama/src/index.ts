@@ -1,3 +1,2 @@
-import { VERSION } from '@node-agent/core';
-
-console.log(`Using @node-agent/core version: ${VERSION}`);
+export type { OllamaProviderOptions } from './ollama_provider.ts';
+export { OllamaProvider } from './ollama_provider.ts';
