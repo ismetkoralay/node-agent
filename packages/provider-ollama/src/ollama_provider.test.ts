@@ -115,6 +115,26 @@ describe('OllamaProvider', () => {
     }
   });
 
+  test('an invalid history fails as a non-retryable ProviderError without calling Ollama', async () => {
+    const client = fakeClient(ok);
+    const provider = new OllamaProvider({ client: client as never });
+
+    const err = await provider
+      .chat({
+        model: 'llama3.2',
+        messages: [{ role: 'tool', tool_call_id: 'x', content: 'result' }],
+      })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err).toMatchObject({
+      message: expect.stringContaining('unknown tool_call_id "x"'),
+      provider: 'ollama',
+      retryable: false,
+    });
+    expect(client.calls).toEqual([]);
+  });
+
   test('rejects with the abort reason when the signal fires mid-request', async () => {
     const never = new Promise<OllamaResponse>(() => {});
     const provider = new OllamaProvider({ client: fakeClient(never) as never });
