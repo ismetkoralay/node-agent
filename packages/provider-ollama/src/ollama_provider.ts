@@ -25,10 +25,12 @@ export class OllamaProvider implements LLMProvider {
   async chat(request: ChatRequest, opts?: { signal?: AbortSignal }): Promise<ChatResponse> {
     const signal = opts?.signal;
     signal?.throwIfAborted();
+    // Outside the try: a request we cannot translate is our error, not a failure to reach Ollama.
+    const ollamaRequest = toOllamaRequest(request);
     const abortWatch = signal ? watchAbort(signal) : undefined;
     let res: OllamaResponse;
     try {
-      const call = this.#client.chat(toOllamaRequest(request));
+      const call = this.#client.chat(ollamaRequest);
       // The Ollama client cannot cancel a non-streaming request, so we stop waiting for it.
       res = await (abortWatch ? Promise.race([call, abortWatch.rejection]) : call);
     } catch (err) {

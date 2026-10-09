@@ -15,12 +15,12 @@ In use today:
 - Biome (lint and format)
 - Vitest
 - GitHub Actions (lint, typecheck, test)
+- Ollama as the model provider (`@node-agent/provider-ollama`)
 
 Planned, per the roadmap below:
 
 - NestJS for the HTTP API
 - PostgreSQL with Drizzle for chat history
-- Ollama as the model provider
 
 ## Setup and commands
 
@@ -38,6 +38,20 @@ Other scripts: `pnpm format` (apply Biome fixes) and `pnpm test:watch`.
 ## Conventions
 
 Message types in `@node-agent/core` keep OpenAI's snake_case field names (`tool_calls`, `tool_call_id`) because that shape goes to the database and the API unchanged; every other type we define uses camelCase (`finishReason`, `promptTokens`).
+
+## Ollama provider
+
+`@node-agent/provider-ollama` talks to Ollama's native `/api/chat` endpoint, not its OpenAI-compatible `/v1/chat/completions`. The compatible endpoint would make the translation below unnecessary; using the native API is a deliberate choice, to practise writing an adapter between two formats. The translation lives in `packages/provider-ollama/src/mapping.ts` as pure functions.
+
+Tool calling differs between our (OpenAI-shaped) format and Ollama's in three places:
+
+| | Our format | Ollama |
+|---|---|---|
+| Tool call `arguments` | JSON string | JSON object |
+| Tool call `id` | always present | absent; the provider generates `call_<uuid>` |
+| Tool result message | matched by `tool_call_id` | matched by tool name (`tool_name`) |
+
+Because Ollama has no call ids, an id does not survive a round trip through it: the name and arguments do, and a fresh id is generated each time. Whether a model actually returns structured `tool_calls` depends on the model; `qwen2.5-coder` answered with the call as plain text in `content` in our manual test, while `llama3.2` returned `tool_calls`.
 
 ## Roadmap
 
