@@ -53,6 +53,26 @@ Tool calling differs between our (OpenAI-shaped) format and Ollama's in three pl
 
 Because Ollama has no call ids, an id does not survive a round trip through it: the name and arguments do, and a fresh id is generated each time. Whether a model actually returns structured `tool_calls` depends on the model; `qwen2.5-coder` answered with the call as plain text in `content` in our manual test, while `llama3.2` returned `tool_calls`.
 
+## Local LLM Call
+
+To install ollama on local machine visit: https://ollama.com/download
+
+Then to install any model ollama supports to local:
+
+```sh
+ollama pull <model_name>
+```
+
+After installation is done run:
+
+```sh
+pnpm hello <message_here>
+```
+
+- This command will trigger ollama call and afterwards the result will be visible on console.
+- If the message is empty, it'll trigger ollama with a default message.
+
+
 ## Roadmap
 
 Scope and progress for each step live in its issue.
