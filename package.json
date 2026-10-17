@@ -7,7 +7,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "hello": "node scripts/hello.ts"
+    "hello": "node --env-file-if-exists=.env scripts/hello.ts"
   },
   "author": "Ismet Koralay",
   "engines": {
