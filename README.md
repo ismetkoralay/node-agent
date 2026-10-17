@@ -57,16 +57,23 @@ Because Ollama has no call ids, an id does not survive a round trip through it: 
 
 To install ollama on local machine visit: https://ollama.com/download
 
-Then to install any model ollama supports to local:
+Ensure that ollama is running. E.g. run ```ollama serve```
+
+Then to install any model ollama supports to local(llama3.2 is used for tests):
 
 ```sh
 ollama pull <model_name>
 ```
 
+Copy `OLLAMA_BASE_URL` and `LLM_MODEL` from the .env.example file and paste them .env file on the root(create a new one if it doesn't exist).
+Default values for them:
+- OLLAMA_BASE_URL='http://localhost:11434'
+- LLM_MODEL=llama3.2
+
 After installation is done run:
 
 ```sh
-pnpm hello <message_here>
+pnpm hello "<message_here>"
 ```
 
 - This command will trigger ollama call and afterwards the result will be visible on console.

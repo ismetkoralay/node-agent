@@ -24,15 +24,17 @@ ollamaProvider
   })
   .then((res) => {
     const endedAt = performance.now();
-    console.log('Model used:', model);
-    console.log('Finish response:', res.finishReason);
+    console.log('model:', model);
     console.log('Response:', res.message.content);
+    let status = `finishReason: ${res.finishReason}`;
     if (res.usage != null) {
-      console.log('Prompt tokens:', res.usage.promptTokens);
-      console.log('Completion tokens:', res.usage.completionTokens);
+      status += `· tokens: ${res.usage.promptTokens} -> ${res.usage.completionTokens}`;
     }
-    console.log('Elapsed time (s):', (endedAt - startedAt) / 1000);
+    const elapsedTime = ((endedAt - startedAt) / 1000).toFixed(1);
+    status += `· ${elapsedTime}s`;
+    console.log(status);
   })
   .catch((err) => {
-    console.error('Error during chat request:', err);
+    console.error('Error during chat request:', err.message);
+    process.exit(1);
   });
