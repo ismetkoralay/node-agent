@@ -31,7 +31,7 @@ ollamaProvider
       status += `· tokens: ${res.usage.promptTokens} -> ${res.usage.completionTokens}`;
     }
     const elapsedTime = ((endedAt - startedAt) / 1000).toFixed(1);
-    status += `· ${elapsedTime}s`;
+    status += ` · ${elapsedTime}s`;
     console.log(status);
   })
   .catch((err) => {
