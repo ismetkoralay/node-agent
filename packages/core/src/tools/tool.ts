@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ToolDefinition } from '../types/index.ts';
+import type { ToolCall, ToolDefinition, ToolMessage } from '../types/index.ts';
 
 /**
  * The context in which a tool is executed.
@@ -87,4 +87,41 @@ export function toToolDefinition(
       parameters: parameters,
     },
   };
+}
+
+export type ToolResult = ({ ok: true; output: unknown } | { ok: false; error: string }) & {
+  durationMs: number;
+};
+
+export function toToolMessage(call: ToolCall, result: ToolResult): ToolMessage {
+  if (!result.ok) {
+    return {
+      role: 'tool',
+      tool_call_id: call.id,
+      content: result.error,
+    };
+  }
+  if (typeof result.output === 'string') {
+    return {
+      role: 'tool',
+      tool_call_id: call.id,
+      content: result.output,
+    };
+  }
+
+  return {
+    role: 'tool',
+    tool_call_id: call.id,
+    content: stringifyOutput(result.output),
+  };
+}
+
+/** `message.content` must be a string, so a missing or unserializable output still yields one. */
+function stringifyOutput(output: unknown): string {
+  try {
+    return JSON.stringify(output ?? null, null, 2) ?? String(output);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return `Tool succeeded but its output could not be serialized: ${reason}`;
+  }
 }
