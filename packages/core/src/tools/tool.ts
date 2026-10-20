@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import type { ToolCall, ToolDefinition, ToolMessage } from '../types/index.ts';
 
+export interface Logger {
+  debug: (message: string, meta?: Record<string, unknown>) => void;
+  info: (message: string, meta?: Record<string, unknown>) => void;
+  warn: (message: string, meta?: Record<string, unknown>) => void;
+  error: (message: string, meta?: Record<string, unknown>) => void;
+}
+
 /**
  * The context in which a tool is executed.
  * This includes an AbortSignal for cancellation, a conversation ID for tracking,
@@ -9,12 +16,7 @@ import type { ToolCall, ToolDefinition, ToolMessage } from '../types/index.ts';
 export interface ToolContext {
   signal: AbortSignal;
   conversationId: string;
-  logger: {
-    debug: (message: string, meta?: Record<string, unknown>) => void;
-    info: (message: string, meta?: Record<string, unknown>) => void;
-    warn: (message: string, meta?: Record<string, unknown>) => void;
-    error: (message: string, meta?: Record<string, unknown>) => void;
-  };
+  logger: Logger;
 }
 
 /**
