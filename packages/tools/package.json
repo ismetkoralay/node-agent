@@ -10,6 +10,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@node-agent/core": "workspace:*"
+    "@node-agent/core": "workspace:*",
+    "mathjs": "^15.2.0",
+    "zod": "^4.6.7"
   }
 }
