@@ -7,7 +7,8 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "hello": "node --env-file-if-exists=.env scripts/hello.ts"
+    "hello": "node --env-file-if-exists=.env scripts/hello.ts",
+    "chat": "node --env-file-if-exists=.env scripts/chat.ts"
   },
   "author": "Ismet Koralay",
   "engines": {
@@ -29,6 +30,8 @@
     "vitest": "^5.0.2"
   },
   "dependencies": {
-    "@node-agent/provider-ollama": "workspace:*"
+    "@node-agent/core": "workspace:*",
+    "@node-agent/provider-ollama": "workspace:*",
+    "@node-agent/tools": "workspace:*"
   }
 }
