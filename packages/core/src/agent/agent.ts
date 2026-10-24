@@ -178,6 +178,7 @@ class AgentImpl implements Agent {
     this.#logger.debug('tools executed', {
       step,
       results: results.map((result, i) => ({
+        id: calls[i]?.id,
         name: calls[i]?.function.name,
         ok: result.ok,
         durationMs: result.durationMs,

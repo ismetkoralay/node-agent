@@ -80,6 +80,21 @@ pnpm hello "<message_here>"
 - If the message is empty, it'll trigger ollama with a default message.
 
 
+## Try it in the terminal
+
+`pnpm chat` opens a REPL on top of the whole stack: `OllamaProvider`, an in-memory conversation, and the `get_current_time` and `calculator` tools. It uses the same `.env` values as `pnpm hello` (`OLLAMA_BASE_URL`, `LLM_MODEL`).
+
+```sh
+pnpm chat
+```
+
+Each answer is preceded by one line per tool call, `[tool] name(arguments) → result (time)`, and followed by the step count and token usage. The tool lines are printed after the run finishes, not while it is in progress.
+
+- `/exit` (or Ctrl+D) leaves.
+- Ctrl+C cancels the request in progress and keeps the session. A cancelled request is not added to the history. Ollama itself is not told to stop, so it may keep generating until it finishes.
+- Whether the model calls a tool when it should depends on the model; small ones sometimes answer without a tool or call one unprompted.
+
+
 ## Roadmap
 
 Scope and progress for each step live in its issue.
