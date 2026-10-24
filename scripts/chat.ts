@@ -20,9 +20,16 @@ You can see the earlier messages of this conversation; use them when the user re
 
 async function chat() {
   const rl = readline.createInterface({ input, output });
-  // A pending rl.question never settles when the interface closes (Ctrl+D, end of piped input),
-  // so the prompt races against this.
-  const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+  // The interface can close at any time (Ctrl+D, end of piped input), also while a request is
+  // running. rl.question throws on a closed interface, so the loop checks the flag first. A
+  // pending rl.question never settles on close, so the prompt also races against `closed`.
+  let isClosed = false;
+  const closed = new Promise<null>((resolve) =>
+    rl.once('close', () => {
+      isClosed = true;
+      resolve(null);
+    }),
+  );
 
   // The agent logs how long each tool call took; keep it by call id to print after the run.
   const durations = new Map<string, number>();
@@ -51,7 +58,7 @@ async function chat() {
 
   console.log('Type "/exit" to leave. Ctrl+C cancels the current request.\n');
 
-  while (true) {
+  while (!isClosed) {
     // Ctrl+C aborts whatever is running: the pending prompt or the agent request.
     const controller = new AbortController();
     const { signal } = controller;
@@ -84,7 +91,7 @@ async function chat() {
         }
       }
 
-      console.log(`agent> ${result.message.content}`);
+      console.log(`agent> ${result.message.content ?? '(no answer, max steps reached)'}`);
       const { promptTokens, completionTokens } = result.usage;
       console.log(
         `  [${result.steps} steps · tokens: ${promptTokens} in / ${completionTokens} out]`,
