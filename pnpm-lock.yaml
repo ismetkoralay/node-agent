@@ -166,9 +166,15 @@ importers:
 
   .:
     dependencies:
+      '@node-agent/core':
+        specifier: workspace:*
+        version: link:packages/core
       '@node-agent/provider-ollama':
         specifier: workspace:*
         version: link:packages/provider-ollama
+      '@node-agent/tools':
+        specifier: workspace:*
+        version: link:packages/tools
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.14

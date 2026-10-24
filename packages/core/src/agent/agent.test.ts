@@ -439,7 +439,12 @@ test('logs every step with its step number', async () => {
     expect.objectContaining({
       step: 1,
       results: [
-        expect.objectContaining({ name: 'echo', ok: true, durationMs: expect.any(Number) }),
+        expect.objectContaining({
+          id: expect.any(String),
+          name: 'echo',
+          ok: true,
+          durationMs: expect.any(Number),
+        }),
       ],
     }),
   );
