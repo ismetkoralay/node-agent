@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "erasableSyntaxOnly": false // Class parameter properties (e.g., constructor(public name: string)) triggers TS 1294 after TS5.8+
+  }
+}
