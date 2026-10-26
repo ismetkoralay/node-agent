@@ -1,6 +1,7 @@
 import { TerminusModule } from '@nestjs/terminus';
 import { Test, TestingModule } from '@nestjs/testing';
 import { VERSION } from '@node-agent/core';
+import { LoggerModule } from 'nestjs-pino';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { HealthController } from './health.controller.ts';
 
@@ -9,7 +10,14 @@ describe('HealthController', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [TerminusModule],
+      imports: [
+        TerminusModule,
+        LoggerModule.forRoot({
+          pinoHttp: {
+            level: 'silent',
+          },
+        }),
+      ],
       controllers: [HealthController],
     }).compile();
 

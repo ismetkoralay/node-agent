@@ -1,12 +1,12 @@
-import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.ts';
 import { EnvService } from './config/env.service.ts';
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
-
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const logger = app.get(Logger);
+  app.useLogger(logger);
   app.enableShutdownHooks();
   const envService = app.get(EnvService);
   const port = envService.get('PORT');
