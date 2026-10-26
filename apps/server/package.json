@@ -24,7 +24,9 @@
     "pino-http": "^11.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@node-agent/tools": "workspace:*",
+    "@node-agent/provider-ollama": "workspace:*"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
