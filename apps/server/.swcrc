@@ -1,3 +1,4 @@
 { 
-    "jsc": { "rewriteRelativeImportExtensions": true } 
+    "jsc": { "rewriteRelativeImportExtensions": true },
+    "sourceMaps": true
 }

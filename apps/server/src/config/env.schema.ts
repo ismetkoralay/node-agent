@@ -1,7 +1,5 @@
 import { z } from 'zod';
-
-const emptyAsUndefined = <T extends z.ZodType>(schema: T) =>
-  z.preprocess((v) => (v === '' ? undefined : v), schema);
+import { emptyAsUndefined } from '../common/zod-helpers.ts';
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
