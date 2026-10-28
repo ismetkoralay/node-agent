@@ -16,10 +16,10 @@ In use today:
 - Vitest
 - GitHub Actions (lint, typecheck, test)
 - Ollama as the model provider (`@node-agent/provider-ollama`)
+- NestJS for the HTTP API (`apps/server`)
 
 Planned, per the roadmap below:
 
-- NestJS for the HTTP API
 - PostgreSQL with Drizzle for chat history
 
 ## Setup and commands
@@ -94,6 +94,18 @@ Each answer is preceded by one line per tool call, `[tool] name(arguments) → r
 - Ctrl+C cancels the request in progress and keeps the session. A cancelled request is not added to the history. Ollama itself is not told to stop, so it may keep generating until it finishes.
 - Whether the model calls a tool when it should depends on the model; small ones sometimes answer without a tool or call one unprompted.
 
+
+## HTTP API
+
+`apps/server` is a NestJS app that exposes conversations under `/v1/conversations`. Every error, whatever its source, is turned into one response shape by a single global filter:
+
+```json
+{ "error": { "code": "validation_error", "message": "Request validation failed", "requestId": "...", "details": [{ "path": "content", "message": "..." }] } }
+```
+
+`code` is a stable snake_case identifier, `requestId` equals the `x-request-id` response header and the `reqId` in the logs, and `details` is present only for `validation_error`. For 5xx responses (`provider_unavailable` is 502, `internal_error` is 500) the message is a fixed text; the real error, with its stack and cause, goes to the log only.
+
+Only one message can run in a conversation at a time. A second message sent while a run is still in progress gets `409 conversation_busy`, so two runs never read the same stale history. This lock is an in-memory `Set` inside the server process, so it assumes a single server instance: with several instances it protects nothing. A shared lock (e.g. Redis) is left for a later step.
 
 ## Roadmap
 
