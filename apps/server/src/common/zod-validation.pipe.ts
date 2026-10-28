@@ -1,24 +1,24 @@
-import { type ArgumentMetadata, BadRequestException, type PipeTransform } from '@nestjs/common';
-import { ZodError, ZodType } from 'zod';
+import type { ArgumentMetadata, PipeTransform } from '@nestjs/common';
+import type { ZodType } from 'zod';
+import { RequestValidationError } from './request-validation.error.ts';
 
 export class ZodValidationPipe implements PipeTransform {
-  constructor(private schema: ZodType) {}
+  constructor(private readonly schema: ZodType) {}
 
-  transform(value: unknown, _metadata: ArgumentMetadata) {
-    let parsedValue: unknown;
-    try {
-      parsedValue = this.schema.parse(value);
-      return parsedValue;
-    } catch (error) {
-      let message: string = '';
-      if (error instanceof ZodError) {
-        message = `${error.issues[0]?.message}: ${error.issues[0]?.path[0]?.toString()}`;
-      } else {
-        message = `Schema validation is failed for: ${typeof value}`;
-      }
-      throw new BadRequestException(message, {
-        cause: error,
+  transform(value: unknown, metadata: ArgumentMetadata) {
+    const parsed = this.schema.safeParse(value);
+    if (!parsed.success) {
+      // `@Param('id', pipe)` gives `metadata.data === 'id'`; a body has no name, so no prefix.
+      const prefix = metadata.data ? [metadata.data] : [];
+      const issues = parsed.error.issues.map((issue) => ({
+        path: [...prefix, ...issue.path.map(String)].join('.'),
+        message: issue.message,
+      }));
+      throw new RequestValidationError('Request validation failed', issues, {
+        cause: parsed.error,
       });
     }
+
+    return parsed.data;
   }
 }

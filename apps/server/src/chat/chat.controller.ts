@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { z } from 'zod';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.ts';
 import {
   type ConversationDto,
@@ -23,21 +24,25 @@ export class ChatController {
   }
 
   @Get('/:id')
-  async getConversation(@Param('id', new ParseUUIDPipe()) id: string): Promise<ConversationDto> {
+  async getConversation(
+    @Param('id', new ZodValidationPipe(z.uuid())) id: string,
+  ): Promise<ConversationDto> {
     return this.chatService.getConversation(id);
   }
 
   @Post('/:id/messages')
   @HttpCode(200)
   async sendMessage(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', new ZodValidationPipe(z.uuid())) id: string,
     @Body(new ZodValidationPipe(sendMessageSchema)) request: SendMessageDto,
   ): Promise<SendMessageResponseDto> {
     return this.chatService.sendMessage(id, request);
   }
 
   @Get('/:id/messages')
-  async getMessages(@Param('id', new ParseUUIDPipe()) id: string): Promise<GetMessagesDto> {
+  async getMessages(
+    @Param('id', new ZodValidationPipe(z.uuid())) id: string,
+  ): Promise<GetMessagesDto> {
     return await this.chatService.getMessages(id);
   }
 }

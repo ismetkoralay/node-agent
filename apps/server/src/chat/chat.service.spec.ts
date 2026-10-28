@@ -1,8 +1,16 @@
-import { HttpException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { ConversationNotFoundError, createAgent, InMemoryChatStore } from '@node-agent/core';
+import { HttpException } from '@nestjs/common';
+import {
+  type ChatResponse,
+  ConversationNotFoundError,
+  createAgent,
+  InMemoryChatStore,
+  type LLMProvider,
+  ProviderError,
+} from '@node-agent/core';
 import { FakeProvider, textResponse } from '@node-agent/core/testing';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ChatService } from './chat.service.ts';
+import { ConversationBusyError } from './conversation-busy.error.ts';
 
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -55,7 +63,7 @@ describe('Chat Service', () => {
   describe('Get Conversation', () => {
     test('getConversation throws for nonexisting conversation id', async () => {
       const id = crypto.randomUUID();
-      const err = new NotFoundException(`Conversation with ID: ${id} is not found`);
+      const err = new ConversationNotFoundError(id);
       await expect(service.getConversation(id)).rejects.toStrictEqual(err);
     });
 
@@ -76,7 +84,7 @@ describe('Chat Service', () => {
   describe('Send Message', () => {
     test('sendMessage fails when a conversation does not exist for given id', async () => {
       const id = crypto.randomUUID();
-      const err = new NotFoundException(`Conversation with ID: ${id} is not found`);
+      const err = new ConversationNotFoundError(id);
 
       await expect(service.sendMessage(id, { content: '' })).rejects.toStrictEqual(err);
     });
@@ -117,22 +125,9 @@ describe('Chat Service', () => {
   });
 
   describe('Get Messages', () => {
-    test('getMessages maps unexpected store errors to InternalServerErrorException', async () => {
-      const storeError = new Error('disk is on fire');
-      vi.spyOn(store, 'getMessages').mockRejectedValue(storeError);
-
-      const err = await service.getMessages(crypto.randomUUID()).catch((e) => e);
-
-      expect(err).toBeInstanceOf(InternalServerErrorException);
-      expect(err.cause).toBe(storeError);
-    });
-
     test('getMessages throws when the conversation does not exist for given id', async () => {
       const id = crypto.randomUUID();
-      const conversationNotFoundError = new ConversationNotFoundError(id);
-      const err = new NotFoundException(conversationNotFoundError.message, {
-        cause: conversationNotFoundError,
-      });
+      const err = new ConversationNotFoundError(id);
 
       await expect(service.getMessages(id)).rejects.toMatchObject(err);
     });
@@ -164,6 +159,144 @@ describe('Chat Service', () => {
           },
         ],
       });
+    });
+  });
+
+  describe('Conversation lock', () => {
+    /** A provider whose calls stay pending until the test releases them, so runs overlap deterministically. */
+    class GatedProvider implements LLMProvider {
+      readonly name = 'gated';
+      readonly #waiting: ((response: ChatResponse | Error) => void)[] = [];
+
+      chat(): Promise<ChatResponse> {
+        return new Promise((resolve, reject) => {
+          this.#waiting.push((outcome) =>
+            outcome instanceof Error ? reject(outcome) : resolve(outcome),
+          );
+        });
+      }
+
+      get pending(): number {
+        return this.#waiting.length;
+      }
+
+      release(outcome: ChatResponse | Error): void {
+        const next = this.#waiting.shift();
+        if (next === undefined) throw new Error('no pending provider call');
+        next(outcome);
+      }
+    }
+
+    let gate: GatedProvider;
+    let lockedService: ChatService;
+
+    beforeEach(() => {
+      gate = new GatedProvider();
+      lockedService = new ChatService(
+        store,
+        createAgent({ model: 'test-model', provider: gate, store }),
+      );
+    });
+
+    /** Lets the first run reach the provider call, i.e. be past the lock check and inside `agent.run`. */
+    async function untilProviderIsCalled(calls = 1): Promise<void> {
+      await vi.waitFor(() => expect(gate.pending).toBe(calls));
+    }
+
+    test('rejects a second message to the same conversation while the first is running', async () => {
+      const { id } = await lockedService.createConversation({});
+      const first = lockedService.sendMessage(id, { content: 'first' });
+      await untilProviderIsCalled();
+
+      const err = await lockedService.sendMessage(id, { content: 'second' }).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ConversationBusyError);
+      expect(err).toMatchObject({ code: 'conversation_busy', conversationId: id });
+      gate.release(textResponse('answer to first'));
+      await expect(first).resolves.toMatchObject({ message: { content: 'answer to first' } });
+    });
+
+    test('a rejected busy request does not touch the history', async () => {
+      const { id } = await lockedService.createConversation({});
+      const first = lockedService.sendMessage(id, { content: 'first' });
+      await untilProviderIsCalled();
+      await lockedService.sendMessage(id, { content: 'second' }).catch(() => undefined);
+
+      gate.release(textResponse('answer to first'));
+      await first;
+
+      const { messages } = await lockedService.getMessages(id);
+      expect(messages.map((m) => m.content)).toStrictEqual(['first', 'answer to first']);
+      expect(gate.pending).toBe(0);
+    });
+
+    test('a request rejected as busy does not release the lock of the running one', async () => {
+      const { id } = await lockedService.createConversation({});
+      const first = lockedService.sendMessage(id, { content: 'first' });
+      await untilProviderIsCalled();
+
+      const second = await lockedService.sendMessage(id, { content: 'second' }).catch((e) => e);
+      const third = await lockedService.sendMessage(id, { content: 'third' }).catch((e) => e);
+
+      expect(second).toBeInstanceOf(ConversationBusyError);
+      expect(third).toBeInstanceOf(ConversationBusyError);
+      gate.release(textResponse('answer to first'));
+      await first;
+    });
+
+    test('releases the lock once the run finishes', async () => {
+      const { id } = await lockedService.createConversation({});
+      const first = lockedService.sendMessage(id, { content: 'first' });
+      await untilProviderIsCalled();
+      gate.release(textResponse('answer to first'));
+      await first;
+
+      const second = lockedService.sendMessage(id, { content: 'second' });
+      await untilProviderIsCalled();
+      gate.release(textResponse('answer to second'));
+
+      await expect(second).resolves.toMatchObject({ message: { content: 'answer to second' } });
+    });
+
+    test('releases the lock when the run fails, and the failed run leaves no messages', async () => {
+      const { id } = await lockedService.createConversation({});
+      const first = lockedService.sendMessage(id, { content: 'first' });
+      const failure = new ProviderError('down', { provider: 'gated', retryable: true });
+      await untilProviderIsCalled();
+      gate.release(failure);
+      await expect(first).rejects.toBe(failure);
+
+      const second = lockedService.sendMessage(id, { content: 'second' });
+      await untilProviderIsCalled();
+      gate.release(textResponse('answer to second'));
+      await second;
+
+      const { messages } = await lockedService.getMessages(id);
+      expect(messages.map((m) => m.content)).toStrictEqual(['second', 'answer to second']);
+    });
+
+    test('different conversations do not block each other', async () => {
+      const a = await lockedService.createConversation({});
+      const b = await lockedService.createConversation({});
+
+      const first = lockedService.sendMessage(a.id, { content: 'in a' });
+      const second = lockedService.sendMessage(b.id, { content: 'in b' });
+      await untilProviderIsCalled(2);
+      gate.release(textResponse('answer a'));
+      gate.release(textResponse('answer b'));
+
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    });
+
+    test('an unknown conversation fails with not found and takes no lock', async () => {
+      const id = crypto.randomUUID();
+
+      await expect(lockedService.sendMessage(id, { content: 'hi' })).rejects.toBeInstanceOf(
+        ConversationNotFoundError,
+      );
+      await expect(lockedService.sendMessage(id, { content: 'hi' })).rejects.toBeInstanceOf(
+        ConversationNotFoundError,
+      );
     });
   });
 });
