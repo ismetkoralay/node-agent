@@ -8,6 +8,7 @@ export const envSchema = z.object({
   OLLAMA_BASE_URL: z.url().default('http://localhost:11434'),
   LLM_MODEL: emptyAsUndefined(z.string().min(1).default('qwen2.5:7b')),
   AGENT_MAX_STEPS: emptyAsUndefined(z.coerce.number().int().positive().default(8)),
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -79,6 +79,18 @@ pnpm hello "<message_here>"
 - This command will trigger ollama call and afterwards the result will be visible on console.
 - If the message is empty, it'll trigger ollama with a default message.
 
+### Alternative ollama setup
+
+docker-compose.yml file also has an ollama service defined.
+
+To run ollama by the docker:\
+```sh
+docker compose --profile ollama up
+```
+
+The above command will also try to pull qwen2.5:7b model during first run. In case another model is needed, update the command section of ollama-init service in docker compose file.
+
+NOTE: It's in the optional `ollama` profile because MAC laptops might not be able to use GPU to run ollama with docker.
 
 ## Try it in the terminal
 
@@ -112,6 +124,25 @@ Only one message can run in a conversation at a time. A second message sent whil
 While the server is running, Swagger UI is at `http://localhost:3000/docs` and the OpenAPI JSON at `http://localhost:3000/docs-json` (3000 is the default `PORT`). "Try it out" sends real requests; sending a message needs Ollama running, otherwise it returns `502 provider_unavailable`, which is the intended behavior.
 
 Each Zod schema is the single source for validation, the Swagger document and the DTO types; no JSON Schema is written by hand. Success responses are also checked against their schema at runtime (`StandardSchemaSerializerInterceptor`): fields not in the schema are dropped, and a response that does not match it becomes `500 internal_error`. Response schemas therefore cannot be stricter than the core types, and `chat.responses.ts` has compile-time `Same<...>` checks that fail `pnpm typecheck` if they drift from `Conversation` and `Message`.
+
+## DATABASE
+
+The conversations and their history will be stored on a `Postgres` database.
+
+To start the database with docker:\
+```sh
+docker compose up -d
+```
+
+To stop it:\
+```sh
+docker compose down
+```
+
+To stop it by cleaning up the data:\
+```sh
+docker compose down -v
+```
 
 ## Roadmap
 
