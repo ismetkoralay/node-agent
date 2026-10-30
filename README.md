@@ -107,6 +107,12 @@ Each answer is preceded by one line per tool call, `[tool] name(arguments) → r
 
 Only one message can run in a conversation at a time. A second message sent while a run is still in progress gets `409 conversation_busy`, so two runs never read the same stale history. This lock is an in-memory `Set` inside the server process, so it assumes a single server instance: with several instances it protects nothing. A shared lock (e.g. Redis) is left for a later step.
 
+### API documentation
+
+While the server is running, Swagger UI is at `http://localhost:3000/docs` and the OpenAPI JSON at `http://localhost:3000/docs-json` (3000 is the default `PORT`). "Try it out" sends real requests; sending a message needs Ollama running, otherwise it returns `502 provider_unavailable`, which is the intended behavior.
+
+Each Zod schema is the single source for validation, the Swagger document and the DTO types; no JSON Schema is written by hand. Success responses are also checked against their schema at runtime (`StandardSchemaSerializerInterceptor`): fields not in the schema are dropped, and a response that does not match it becomes `500 internal_error`. Response schemas therefore cannot be stricter than the core types, and `chat.responses.ts` has compile-time `Same<...>` checks that fail `pnpm typecheck` if they drift from `Conversation` and `Message`.
+
 ## Roadmap
 
 Scope and progress for each step live in its issue.

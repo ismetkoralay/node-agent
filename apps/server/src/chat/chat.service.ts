@@ -8,11 +8,10 @@ import {
 import { AGENT, CHAT_STORE } from '../agent/tokens.ts';
 import type {
   ConversationDto,
-  CreateConversationDto,
-  GetMessagesDto,
-  SendMessageDto,
+  MessagesResponseDto,
   SendMessageResponseDto,
-} from './chat.schemas.ts';
+} from './chat.responses.ts';
+import type { CreateConversationDto, SendMessageDto } from './chat.schemas.ts';
 import { ConversationBusyError } from './conversation-busy.error.ts';
 
 @Injectable()
@@ -33,6 +32,7 @@ export class ChatService {
       id: res.id,
       createdAt: res.createdAt,
       title: res.title,
+      metadata: res.metadata,
     };
   }
 
@@ -46,6 +46,7 @@ export class ChatService {
       id: res.id,
       createdAt: res.createdAt,
       title: res.title,
+      metadata: res.metadata,
     };
   }
 
@@ -78,7 +79,7 @@ export class ChatService {
     };
   }
 
-  async getMessages(id: string): Promise<GetMessagesDto> {
+  async getMessages(id: string): Promise<MessagesResponseDto> {
     const messages = await this.chatStore.getMessages(id);
     return { messages };
   }
