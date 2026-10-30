@@ -2,6 +2,9 @@ import { describe, expect, test } from 'vitest';
 import { envSchema } from './env.schema.ts';
 
 describe('env schema', () => {
+  const baseEnv = {
+    DATABASE_URL: 'postgres://test:test@localhost:5432/test',
+  };
   test('fails to parse when NODE_ENV is not in the range of [production, development, test]', () => {
     const parsed = envSchema.safeParse({
       NODE_ENV: 'invalid',
@@ -94,8 +97,37 @@ describe('env schema', () => {
     expect(parsed.error?.issues[0]?.path[0]).toBe('AGENT_MAX_STEPS');
   });
 
+  test('fails to parse when DATABASE_URL is not provided', () => {
+    const parsed = envSchema.safeParse({});
+
+    expect(parsed.error).toBeDefined();
+    expect(parsed.error?.issues[0]?.message).toBe(
+      'Invalid input: expected string, received undefined',
+    );
+    expect(parsed.error?.issues[0]?.code).toBe('invalid_type');
+    expect(parsed.error?.issues[0]?.path[0]).toBe('DATABASE_URL');
+  });
+
+  test('fails to parse when DATABASE_URL is not valid postgres url', () => {
+    const parsed = envSchema.safeParse({
+      DATABASE_URL: 'http://localhost:5432',
+    });
+
+    expect(parsed.error).toBeDefined();
+    expect(parsed.error?.issues[0]?.message).toBe('Invalid URL');
+    expect(parsed.error?.issues[0]?.code).toBe('invalid_format');
+    expect(parsed.error?.issues[0]?.path[0]).toBe('DATABASE_URL');
+  });
+
+  test('postgresql:// is also accepted', () => {
+    expect(
+      envSchema.safeParse({ DATABASE_URL: 'postgresql://u:p@localhost:5432/db' }).success,
+    ).toBe(true);
+  });
+
   test('successfully fallbacks to default value when PORT is empty string', () => {
     const parsed = envSchema.safeParse({
+      ...baseEnv,
       PORT: '',
     });
 
@@ -113,6 +145,7 @@ describe('env schema', () => {
 
   test('successfully fallbacks to default value when LLM_MODEL is empty string', () => {
     const parsed = envSchema.safeParse({
+      ...baseEnv,
       LLM_MODEL: '',
     });
 
@@ -130,6 +163,7 @@ describe('env schema', () => {
 
   test('successfully fallbacks to default value when AGENT_MAX_STEPS is empty string', () => {
     const parsed = envSchema.safeParse({
+      ...baseEnv,
       AGENT_MAX_STEPS: '',
     });
 
@@ -145,8 +179,10 @@ describe('env schema', () => {
     });
   });
 
-  test('successfully parses with defaults when no env variable is provided', () => {
-    const parsed = envSchema.safeParse({});
+  test('successfully parses with defaults when no env variable(except DATABASE_URL) is provided', () => {
+    const parsed = envSchema.safeParse({
+      ...baseEnv,
+    });
 
     expect(parsed.error).toBeUndefined();
     expect(parsed.success).toBeTruthy();
@@ -162,6 +198,7 @@ describe('env schema', () => {
 
   test('successfully parses with the given env variables', () => {
     const parsed = envSchema.safeParse({
+      ...baseEnv,
       NODE_ENV: 'production',
       PORT: 8080,
       LOG_LEVEL: 'debug',
@@ -172,13 +209,14 @@ describe('env schema', () => {
 
     expect(parsed.error).toBeUndefined();
     expect(parsed.success).toBeTruthy();
-    expect(parsed.data).toMatchObject({
+    expect(parsed.data).toStrictEqual({
       NODE_ENV: 'production',
       PORT: 8080,
       LOG_LEVEL: 'debug',
       OLLAMA_BASE_URL: 'http://ollama.net',
       LLM_MODEL: 'llama3.2:8b',
       AGENT_MAX_STEPS: 18,
+      DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     });
   });
 });
