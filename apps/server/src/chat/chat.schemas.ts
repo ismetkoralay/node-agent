@@ -1,36 +1,27 @@
-import type { AgentFinishReason, AssistantMessage, Message } from '@node-agent/core';
 import { z } from 'zod';
 
-export const createConversationSchema = z.object({
-  title: z.string().optional(),
-  metadata: z.record(z.string(), z.string()).optional(),
-});
+export const createConversationSchema = z
+  .object({
+    title: z.string().optional().describe('title of the new conversation'),
+    metadata: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('optional metadata for the conversation'),
+  })
+  .meta({
+    examples: [{ title: 'Current Time', metadata: { timezone: 'Europe/Istanbul' } }],
+  });
 
 export type CreateConversationDto = z.infer<typeof createConversationSchema>;
 
-export const sendMessageSchema = z.object({
-  content: z.string().max(8000).nonempty().nonoptional(),
-});
+export const sendMessageSchema = z
+  .object({
+    content: z.string().min(1).max(8000),
+  })
+  .meta({
+    examples: [{ content: 'What time is it in Istanbul?' }],
+  });
 
 export type SendMessageDto = z.infer<typeof sendMessageSchema>;
 
-/*
- * Responses are plain types, not Zod schemas: nothing parses them. Envelope fields are camelCase
- * as in the issue; messages are core's `Message` untouched (snake_case, `content: null` kept).
- */
-export type ConversationDto = {
-  id: string;
-  title?: string;
-  createdAt: Date;
-};
-
-export type SendMessageResponseDto = {
-  message: AssistantMessage;
-  steps: number;
-  usage: { promptTokens: number; completionTokens: number };
-  finishReason: AgentFinishReason;
-};
-
-export type GetMessagesDto = {
-  messages: Message[];
-};
+export const conversationIdSchema = z.uuid().describe('Id of the conversation');
