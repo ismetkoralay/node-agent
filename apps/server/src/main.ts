@@ -9,7 +9,7 @@ async function bootstrap() {
 
   const logger = app.get(Logger);
   app.useLogger(logger);
-  app.enableShutdownHooks();
+  app.enableShutdownHooks([], { useProcessExit: true });
 
   const envService = app.get(EnvService);
   const port = envService.get('PORT');
