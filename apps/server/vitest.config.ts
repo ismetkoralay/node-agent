@@ -7,5 +7,6 @@ export default defineProject({
     env: {
       DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     },
+    globalSetup: ['./test/global-setup.ts'],
   },
 });
