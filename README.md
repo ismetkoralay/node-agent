@@ -144,12 +144,6 @@ To stop it by cleaning up the data:\
 docker compose down -v
 ```
 
-## Tests
-
-Postgres dependency is introduced with the Nestjs server on apps/server.
-To be able to run all the tests successfully in the repo, docker should be running on the local machine.
-Those tests are running their own temporary postgres instance using `testcontainers`.
-
 ## Roadmap
 
 Scope and progress for each step live in its issue.
