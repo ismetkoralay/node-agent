@@ -1,10 +1,11 @@
+import type { Message, ToolCall } from '@node-agent/core';
 import { sql } from 'drizzle-orm';
 import { check, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 export const conversationsTable = pgTable('conversations', {
   id: uuid().primaryKey().defaultRandom(),
   title: text(),
-  metadata: jsonb().notNull().default({}),
+  metadata: jsonb().$type<Record<string, string>>().notNull().default({}),
   created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
@@ -18,8 +19,8 @@ export const messagesTable = pgTable(
       .notNull(),
     seq: integer().notNull(),
     content: text(),
-    role: text().notNull(),
-    tool_calls: jsonb(),
+    role: text().$type<Message['role']>().notNull(),
+    tool_calls: jsonb().$type<ToolCall[]>(),
     tool_call_id: text(),
     metadata: jsonb().notNull().default({}),
     created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
