@@ -4,3 +4,6 @@ packages:
 allowBuilds:
   '@scarf/scarf': false
   '@swc/core': true
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

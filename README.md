@@ -144,6 +144,14 @@ To stop it by cleaning up the data:\
 docker compose down -v
 ```
 
+## Tests
+
+Docker must be running to run the server tests. Before the tests start, Vitest launches a temporary Postgres container with Testcontainers, applies the migrations and removes the container when the run ends. The development database is never touched. If Docker is not running, the server tests fail instead of being skipped.
+
+```bash
+pnpm test
+```
+
 ## Roadmap
 
 Scope and progress for each step live in its issue.
