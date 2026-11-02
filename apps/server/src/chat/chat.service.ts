@@ -8,6 +8,7 @@ import {
 import { AGENT, CHAT_STORE } from '../agent/tokens.ts';
 import type {
   ConversationDto,
+  ConversationListDto,
   MessagesResponseDto,
   SendMessageResponseDto,
 } from './chat.responses.ts';
@@ -48,6 +49,10 @@ export class ChatService {
       title: res.title,
       metadata: res.metadata,
     };
+  }
+
+  async listConversations(limit: number, cursor?: string): Promise<ConversationListDto> {
+    return await this.chatStore.listConversations(limit, cursor);
   }
 
   async sendMessage(id: string, request: SendMessageDto): Promise<SendMessageResponseDto> {

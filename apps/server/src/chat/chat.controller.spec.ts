@@ -1,12 +1,17 @@
 import type { INestApplication } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { createAgent, InMemoryChatStore } from '@node-agent/core';
+import { type ChatStore, createAgent } from '@node-agent/core';
 import { FakeProvider, textResponse, toolCallResponse } from '@node-agent/core/testing';
 import { getCurrentTimeTool } from '@node-agent/tools';
+import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { LoggerModule } from 'nestjs-pino';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { Pool } from 'pg';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
+import { createTestDatabase, type TestDatabase } from '../../test/test-database.ts';
 import { AGENT, CHAT_STORE } from '../agent/tokens.ts';
+import { PostgresChatStore } from '../chat-store/postgres-chat-store.ts';
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.ts';
 import { ChatController } from './chat.controller.ts';
 import { ChatService } from './chat.service.ts';
@@ -19,12 +24,17 @@ type ToolFlowMessage = {
 };
 
 describe('Chat Controller', () => {
+  // The list tests count rows, so this file gets a database of its own.
+  let database: TestDatabase;
+  let pool: Pool;
+  let db: ReturnType<typeof drizzle>;
+
   let app: INestApplication;
-  let store: InMemoryChatStore;
+  let store: ChatStore;
   let baseUrl: string;
 
   async function start(provider: FakeProvider) {
-    store = new InMemoryChatStore();
+    store = new PostgresChatStore(db);
     const agent = createAgent({
       model: 'test-model',
       provider,
@@ -73,7 +83,19 @@ describe('Chat Controller', () => {
     };
   };
 
+  beforeAll(async () => {
+    database = await createTestDatabase(inject('databaseUrl'));
+    pool = new Pool({ connectionString: database.url });
+    db = drizzle({ client: pool });
+  });
+
+  afterAll(async () => {
+    await pool.end();
+    await database.drop();
+  });
+
   beforeEach(async () => {
+    await db.execute(sql`truncate conversations cascade`); // cascade also clears messages
     await start(new FakeProvider([textResponse('hello from provider')]));
   });
 
@@ -110,6 +132,124 @@ describe('Chat Controller', () => {
         message: 'Request validation failed',
       });
       expect(error.details).toMatchObject([{ path: 'metadata.a' }]);
+    });
+  });
+
+  describe('GET /v1/conversations', () => {
+    type Page = {
+      conversations: { id: string; title?: string; updatedAt: string; messageCount: number }[];
+      nextCursor: string | null;
+    };
+
+    /** Creates `count` conversations one after another, so the last one is the newest. */
+    async function seed(count: number): Promise<string[]> {
+      const ids: string[] = [];
+      for (let i = 0; i < count; i++) {
+        ids.push((await store.createConversation({ title: `conv ${i}` })).id);
+      }
+      return ids;
+    }
+
+    test('returns an empty page when there are no conversations', async () => {
+      const res = await fetch(baseUrl);
+
+      expect(res.status).toBe(200);
+      expect(await json<Page>(res)).toStrictEqual({ conversations: [], nextCursor: null });
+    });
+
+    test('returns id, title, updatedAt as an ISO string and messageCount', async () => {
+      const [id] = await seed(1);
+      await post(`/${id}/messages`, { content: 'hello' });
+
+      const page = await json<Page>(await fetch(baseUrl));
+
+      expect(page.conversations).toStrictEqual([
+        { id, title: 'conv 0', updatedAt: expect.any(String), messageCount: 2 },
+      ]);
+      const [item] = page.conversations;
+      expect(new Date(item?.updatedAt ?? '').toISOString()).toBe(item?.updatedAt);
+    });
+
+    test('lists the most recently updated conversation first', async () => {
+      const [a, b, c] = await seed(3);
+      await post(`/${a}/messages`, { content: 'bump' });
+
+      const page = await json<Page>(await fetch(baseUrl));
+
+      expect(page.conversations.map((x) => x.id)).toStrictEqual([a, c, b]);
+    });
+
+    test('without a limit returns 20 conversations and a nextCursor', async () => {
+      await seed(25);
+
+      const page = await json<Page>(await fetch(baseUrl));
+
+      expect(page.conversations).toHaveLength(20);
+      expect(page.nextCursor).toEqual(expect.any(String));
+    });
+
+    test('pages through 25 conversations with limit=20: 20 then 5, then nextCursor is null', async () => {
+      const ids = await seed(25);
+
+      const first = await json<Page>(await fetch(`${baseUrl}?limit=20`));
+      const second = await json<Page>(
+        await fetch(`${baseUrl}?limit=20&cursor=${encodeURIComponent(first.nextCursor ?? '')}`),
+      );
+
+      expect(first.conversations).toHaveLength(20);
+      expect(second.conversations).toHaveLength(5);
+      expect(second.nextCursor).toBeNull();
+      expect([...first.conversations, ...second.conversations].map((c) => c.id)).toStrictEqual(
+        [...ids].reverse(),
+      );
+    });
+
+    test('a conversation without a title gets one from its first message', async () => {
+      const { id } = await json<{ id: string }>(await post('', {}));
+
+      await post(`/${id}/messages`, { content: 'What is the weather like in Istanbul today?' });
+
+      const page = await json<Page>(await fetch(baseUrl));
+      expect(page.conversations[0]?.title).toBe('What is the weather like in Istanbul today?');
+    });
+
+    test.each([
+      ['limit=0', 'limit'],
+      ['limit=101', 'limit'],
+      ['limit=-1', 'limit'],
+      ['limit=1.5', 'limit'],
+      ['limit=abc', 'limit'],
+      ['limit=', 'limit'],
+      ['limit=1&limit=2', 'limit'],
+      ['cursor=', 'cursor'],
+    ])('returns 400 validation_error for ?%s', async (query, path) => {
+      const res = await fetch(`${baseUrl}?${query}`);
+
+      expect(res.status).toBe(400);
+      const { error } = await json<ErrorBody>(res);
+      expect(error.code).toBe('validation_error');
+      expect(error.details).toMatchObject([{ path }]);
+    });
+
+    test.each([1, 100])('accepts limit=%i', async (limit) => {
+      const res = await fetch(`${baseUrl}?limit=${limit}`);
+
+      expect(res.status).toBe(200);
+    });
+
+    test('returns 400 invalid_cursor for a cursor the server did not issue', async () => {
+      await seed(2);
+
+      const res = await fetch(`${baseUrl}?cursor=not-a-cursor`);
+
+      expect(res.status).toBe(400);
+      expect((await json<ErrorBody>(res)).error.code).toBe('invalid_cursor');
+    });
+
+    test('is not mistaken for GET /:id', async () => {
+      const res = await fetch(baseUrl);
+
+      expect(res.status).toBe(200);
     });
   });
 

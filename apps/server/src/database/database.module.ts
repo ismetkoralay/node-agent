@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { Pool } from 'pg';
 import { EnvService } from '../config/env.service.ts';
+import { relations } from './database.schema.ts';
 
 export const DB = Symbol('DB');
 export const PG_POOL = Symbol('PG_POOL');
@@ -26,6 +27,7 @@ export const PG_POOL = Symbol('PG_POOL');
       useFactory: (pool: Pool) =>
         drizzle({
           client: pool,
+          relations,
         }),
     },
   ],

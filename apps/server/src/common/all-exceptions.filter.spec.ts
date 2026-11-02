@@ -5,7 +5,12 @@ import {
   HttpException,
   NotFoundException,
 } from '@nestjs/common';
-import { AgentError, ConversationNotFoundError, ProviderError } from '@node-agent/core';
+import {
+  AgentError,
+  ConversationNotFoundError,
+  InvalidCursorError,
+  ProviderError,
+} from '@node-agent/core';
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, test, vi } from 'vitest';
 import { ConversationBusyError } from '../chat/conversation-busy.error.ts';
@@ -36,6 +41,16 @@ describe('mapException', () => {
       status: 404,
       code: 'conversation_not_found',
       message: err.message,
+    });
+  });
+
+  test('maps InvalidCursorError to 400 invalid_cursor', () => {
+    const err = new InvalidCursorError({ cause: new SyntaxError('Unexpected token') });
+
+    expect(mapException(err)).toStrictEqual({
+      status: 400,
+      code: 'invalid_cursor',
+      message: 'The cursor is not valid',
     });
   });
 

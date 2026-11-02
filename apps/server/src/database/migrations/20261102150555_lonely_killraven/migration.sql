@@ -1,0 +1,1 @@
+CREATE INDEX "idx_conversations_updated_at_id" ON "conversations" ("updated_at","id");

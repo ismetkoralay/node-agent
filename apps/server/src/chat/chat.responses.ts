@@ -1,4 +1,4 @@
-import type { Conversation, Message } from '@node-agent/core';
+import type { Conversation, ConversationList, Message } from '@node-agent/core';
 import { z } from 'zod';
 import type { Same } from '../common/type-helpers.ts';
 
@@ -94,3 +94,53 @@ export type SendMessageResponseDto = z.input<typeof sendMessageResponseSchema>;
 export const messagesResponseSchema = z.object({ messages: z.array(messageSchema) });
 
 export type MessagesResponseDto = z.input<typeof messagesResponseSchema>;
+
+export const conversationListItemSchema = z
+  .object({
+    id: z.uuid().describe('Unique id of the conversation'),
+    title: z
+      .string()
+      .optional()
+      .describe('The given title, or the start of the first user message when none was given'),
+    updatedAt: isoDate.describe('Last time a message was added to the conversation'),
+    messageCount: z.number().int().min(0).describe('Number of messages in the conversation'),
+  })
+  .meta({
+    examples: [
+      {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        title: 'Current Time',
+        updatedAt: '2026-10-29T10:42:21.427Z',
+        messageCount: 3,
+      },
+    ],
+  });
+
+export const conversationListResponseSchema = z
+  .object({
+    conversations: z
+      .array(conversationListItemSchema)
+      .describe('The conversations, latest updated first'),
+    nextCursor: z
+      .string()
+      .nullable()
+      .describe('Pass as `cursor` to get the next page; `null` on the last page'),
+  })
+  .meta({
+    examples: [
+      {
+        conversations: [
+          {
+            id: '550e8400-e29b-41d4-a716-446655440000',
+            title: 'Current Time',
+            updatedAt: '2026-10-29T10:42:21.427Z',
+            messageCount: 3,
+          },
+        ],
+        nextCursor: 'eyJ1cGRhdGVkQXQiOi4uLn0',
+      },
+    ],
+  });
+
+export type ConversationListDto = z.input<typeof conversationListResponseSchema>;
+const _checkConversationList: Same<ConversationListDto, ConversationList> = true;
