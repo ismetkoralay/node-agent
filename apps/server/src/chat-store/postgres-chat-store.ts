@@ -2,11 +2,15 @@ import {
   AgentError,
   type ChatStore,
   type Conversation,
+  type ConversationList,
   ConversationNotFoundError,
+  InvalidCursorError,
   type Message,
+  titleFromMessages,
 } from '@node-agent/core';
-import { asc, eq, max, sql } from 'drizzle-orm';
+import { asc, desc, eq, max, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { z } from 'zod';
 import { conversationsTable, messagesTable } from '../database/database.schema.ts';
 import { messageToRow, rowToMessage } from './message-row.ts';
 
@@ -19,6 +23,31 @@ function rowToConversation(row: ConversationRow): Conversation {
     metadata: row.metadata,
     createdAt: row.created_at,
   };
+}
+
+/**
+ * The cursor is the `(updated_at, id)` of the last row of a page. `updated_at` travels as the text
+ * Postgres produced, with microseconds: a JavaScript `Date` keeps only milliseconds, and rounding
+ * the cursor down would skip every row that was updated within the same millisecond.
+ */
+const cursorSchema = z.object({
+  updatedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/),
+  id: z.uuid(),
+});
+
+type Cursor = z.infer<typeof cursorSchema>;
+
+function encodeCursor(cursor: Cursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string): Cursor {
+  try {
+    const json: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    return cursorSchema.parse(json);
+  } catch (error) {
+    throw new InvalidCursorError({ cause: error });
+  }
 }
 
 export class PostgresChatStore implements ChatStore {
@@ -49,6 +78,48 @@ export class PostgresChatStore implements ChatStore {
     return row ? rowToConversation(row) : null;
   }
 
+  async listConversations(limit: number, cursor?: string): Promise<ConversationList> {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new RangeError(`limit must be a positive integer, got ${limit}`);
+    }
+    const after = cursor === undefined ? undefined : decodeCursor(cursor);
+
+    // Row comparison matches the index on (updated_at, id) and breaks ties between rows that
+    // share an `updated_at`.
+    const afterCursor = after
+      ? sql`(${conversationsTable.updated_at}, ${conversationsTable.id}) < (${after.updatedAt}::timestamptz, ${after.id}::uuid)`
+      : undefined;
+
+    // One extra row tells whether another page exists.
+    const rows = await this.db
+      .select({
+        id: conversationsTable.id,
+        title: conversationsTable.title,
+        updatedAt: conversationsTable.updated_at,
+        updatedAtExact: sql<string>`to_char(${conversationsTable.updated_at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        messageCount: sql<number>`(select count(*)::int from ${messagesTable} where ${messagesTable.conversation_id} = ${conversationsTable.id})`,
+      })
+      .from(conversationsTable)
+      .where(afterCursor)
+      .orderBy(desc(conversationsTable.updated_at), desc(conversationsTable.id))
+      .limit(limit + 1);
+
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      conversations: page.map((row) => ({
+        id: row.id,
+        title: row.title ?? undefined,
+        updatedAt: row.updatedAt,
+        messageCount: row.messageCount,
+      })),
+      nextCursor:
+        last && rows.length > limit
+          ? encodeCursor({ updatedAt: last.updatedAtExact, id: last.id })
+          : null,
+    };
+  }
+
   async getMessages(conversationId: string): Promise<Message[]> {
     if (!(await this.getConversation(conversationId))) {
       throw new ConversationNotFoundError(conversationId);
@@ -64,14 +135,22 @@ export class PostgresChatStore implements ChatStore {
 
   /**
    * Runs in one transaction that starts with an `UPDATE` of the conversation row. That one
-   * statement checks the conversation exists, bumps `updated_at` and takes a row lock, so
-   * concurrent appenders to the same conversation queue up and each sees the latest `max(seq)`.
+   * statement checks the conversation exists, bumps `updated_at`, gives an untitled conversation
+   * its title and takes a row lock, so concurrent appenders to the same conversation queue up and
+   * each sees the latest `max(seq)`.
    */
   async appendMessages(conversationId: string, messages: Message[]): Promise<void> {
+    const title = titleFromMessages(messages);
     await this.db.transaction(async (tx) => {
       const [locked] = await tx
         .update(conversationsTable)
-        .set({ updated_at: sql`now()` })
+        .set({
+          updated_at: sql`now()`,
+          // `nullif` so that an empty title counts as no title, as it does in the in-memory store.
+          ...(title !== undefined && {
+            title: sql`coalesce(nullif(${conversationsTable.title}, ''), ${title})`,
+          }),
+        })
         .where(eq(conversationsTable.id, conversationId))
         .returning({ id: conversationsTable.id });
       if (!locked) {

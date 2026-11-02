@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import type { Agent, ChatStore } from '@node-agent/core';
+import { type Agent, type ChatStore, InMemoryChatStore } from '@node-agent/core';
 import { FakeProvider, textResponse } from '@node-agent/core/testing';
 import { LoggerModule } from 'nestjs-pino';
 import { describe, expect, test } from 'vitest';
@@ -16,6 +16,8 @@ describe('Agent module', () => {
     })
       .overrideProvider(LLM_PROVIDER)
       .useValue(fake)
+      .overrideProvider(CHAT_STORE)
+      .useValue(new InMemoryChatStore())
       .compile();
 
     const agent = moduleRef.get<Agent>(AGENT);

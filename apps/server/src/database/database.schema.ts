@@ -1,14 +1,28 @@
 import type { Message, ToolCall } from '@node-agent/core';
-import { sql } from 'drizzle-orm';
-import { check, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { defineRelations, sql } from 'drizzle-orm';
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
-export const conversationsTable = pgTable('conversations', {
-  id: uuid().primaryKey().defaultRandom(),
-  title: text(),
-  metadata: jsonb().$type<Record<string, string>>().notNull().default({}),
-  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+export const conversationsTable = pgTable(
+  'conversations',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    title: text(),
+    metadata: jsonb().$type<Record<string, string>>().notNull().default({}),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_conversations_updated_at_id').on(table.updated_at, table.id)],
+);
 
 export const messagesTable = pgTable(
   'messages',
@@ -30,3 +44,15 @@ export const messagesTable = pgTable(
     check('messages_role_check', sql`${table.role} IN ('user', 'system', 'assistant', 'tool')`),
   ],
 );
+
+export const relations = defineRelations({ conversationsTable, messagesTable }, (r) => ({
+  conversationsTable: {
+    messagesTable: r.many.messagesTable(), // Maps the one-to-many relationship
+  },
+  messagesTable: {
+    conversationsTable: r.one.conversationsTable({
+      from: r.messagesTable.conversation_id,
+      to: r.conversationsTable.id,
+    }),
+  },
+}));

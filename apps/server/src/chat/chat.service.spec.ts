@@ -4,6 +4,7 @@ import {
   ConversationNotFoundError,
   createAgent,
   InMemoryChatStore,
+  InvalidCursorError,
   type LLMProvider,
   ProviderError,
 } from '@node-agent/core';
@@ -78,6 +79,85 @@ describe('Chat Service', () => {
       expect(res.id).toBe(conv.id);
       expect(res.createdAt).toStrictEqual(conv.createdAt);
       expect(res.title).toBe(conv.title);
+    });
+  });
+
+  describe('List Conversations', () => {
+    test('returns an empty page when there are no conversations', async () => {
+      await expect(service.listConversations(10)).resolves.toStrictEqual({
+        conversations: [],
+        nextCursor: null,
+      });
+    });
+
+    test('returns id, title, updatedAt and messageCount, newest first', async () => {
+      const older = await service.createConversation({ title: 'older' });
+      const newer = await service.createConversation({});
+      await service.sendMessage(newer.id, { content: 'hello' });
+
+      const res = await service.listConversations(10);
+
+      expect(res.conversations).toStrictEqual([
+        {
+          id: newer.id,
+          title: 'hello',
+          updatedAt: new Date('2026-10-22T10:00:00Z'),
+          messageCount: 2,
+        },
+        {
+          id: older.id,
+          title: 'older',
+          updatedAt: new Date('2026-10-22T10:00:00Z'),
+          messageCount: 0,
+        },
+      ]);
+    });
+
+    test('passes limit and cursor to the store and returns its page unchanged', async () => {
+      const spy = vi.spyOn(store, 'listConversations');
+      for (let i = 0; i < 3; i++) await service.createConversation({ title: `c${i}` });
+
+      const first = await service.listConversations(2);
+      const second = await service.listConversations(2, first.nextCursor ?? undefined);
+
+      expect(spy).toHaveBeenNthCalledWith(1, 2, undefined);
+      expect(spy).toHaveBeenNthCalledWith(2, 2, first.nextCursor);
+      expect(first.conversations.map((c) => c.title)).toStrictEqual(['c2', 'c1']);
+      expect(first.nextCursor).toEqual(expect.any(String));
+      expect(second.conversations.map((c) => c.title)).toStrictEqual(['c0']);
+      expect(second.nextCursor).toBeNull();
+    });
+
+    test('lets the store reject an invalid cursor without wrapping the error', async () => {
+      await expect(service.listConversations(10, 'garbage')).rejects.toBeInstanceOf(
+        InvalidCursorError,
+      );
+    });
+
+    test('a conversation created without a title is titled by its first message', async () => {
+      const conv = await service.createConversation({});
+      expect((await service.getConversation(conv.id)).title).toBeUndefined();
+
+      await service.sendMessage(conv.id, { content: 'x'.repeat(80) });
+
+      expect((await service.getConversation(conv.id)).title).toBe('x'.repeat(50));
+      expect((await service.listConversations(10)).conversations[0]?.title).toBe('x'.repeat(50));
+    });
+
+    test('a failed run does not title the conversation', async () => {
+      const failingService = new ChatService(
+        store,
+        createAgent({
+          model: 'test-model',
+          provider: new FakeProvider([new Error('provider is down')]),
+          store,
+        }),
+      );
+      const conv = await failingService.createConversation({});
+
+      await failingService.sendMessage(conv.id, { content: 'hello' }).catch(() => {});
+
+      expect((await failingService.getConversation(conv.id)).title).toBeUndefined();
     });
   });
 

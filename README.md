@@ -17,10 +17,7 @@ In use today:
 - GitHub Actions (lint, typecheck, test)
 - Ollama as the model provider (`@node-agent/provider-ollama`)
 - NestJS for the HTTP API (`apps/server`)
-
-Planned, per the roadmap below:
-
-- PostgreSQL with Drizzle for chat history
+- PostgreSQL with Drizzle for chat history (`apps/server`)
 
 ## Setup and commands
 
@@ -119,6 +116,24 @@ Each answer is preceded by one line per tool call, `[tool] name(arguments) → r
 
 Only one message can run in a conversation at a time. A second message sent while a run is still in progress gets `409 conversation_busy`, so two runs never read the same stale history. This lock is an in-memory `Set` inside the server process, so it assumes a single server instance: with several instances it protects nothing. A shared lock (e.g. Redis) is left for a later step.
 
+### Listing conversations
+
+`GET /v1/conversations` returns one page of conversations, the most recently updated first. A conversation is updated whenever messages are added to it.
+
+```json
+{
+  "conversations": [
+    { "id": "550e8400-e29b-41d4-a716-446655440000", "title": "Current Time", "updatedAt": "2026-10-29T10:42:21.427Z", "messageCount": 3 }
+  ],
+  "nextCursor": "eyJ1cGRhdGVkQXQiOi4uLn0"
+}
+```
+
+- `limit` is the page size: 1 to 100, default 20.
+- `nextCursor` is `null` on the last page. Otherwise pass it back as `cursor` to get the next page, with the same `limit`. A page is never repeated or skipped when conversations are added or updated between two requests, which `?page=` offsets cannot promise.
+- The cursor is opaque and only meaningful to the server that issued it. A cursor that cannot be read is `400 invalid_cursor`; a bad `limit` is `400 validation_error`.
+- `title` is the title given when the conversation was created. If there was none, the first message sent takes its place: the first 50 characters of the first user message, with whitespace collapsed. A conversation that has no title and no messages has no `title` field.
+
 ### API documentation
 
 While the server is running, Swagger UI is at `http://localhost:3000/docs` and the OpenAPI JSON at `http://localhost:3000/docs-json` (3000 is the default `PORT`). "Try it out" sends real requests; sending a message needs Ollama running, otherwise it returns `502 provider_unavailable`, which is the intended behavior.
@@ -127,11 +142,16 @@ Each Zod schema is the single source for validation, the Swagger document and th
 
 ## DATABASE
 
-The conversations and their history will be stored on a `Postgres` database.
+The server keeps conversations and their history in `Postgres` (`PostgresChatStore`), so they survive a restart. Set `DATABASE_URL` as in `apps/server/.env.example`; `docker compose up -d` starts a database that matches it.
 
 To start the database with docker:\
 ```sh
 docker compose up -d
+```
+
+The server does not create tables itself. Apply the migrations to the database that `DATABASE_URL` points to:\
+```sh
+pnpm --filter @node-agent/server db:migrate
 ```
 
 To stop it:\
@@ -147,6 +167,8 @@ docker compose down -v
 ## Tests
 
 Docker must be running to run the server tests. Before the tests start, Vitest launches a temporary Postgres container with Testcontainers, applies the migrations and removes the container when the run ends. The development database is never touched. If Docker is not running, the server tests fail instead of being skipped.
+
+Test files run in parallel against that one container. A file that truncates tables or counts rows must not share a database with another file, so it calls `createTestDatabase` (`apps/server/test/test-database.ts`) to get an empty migrated database of its own. Only `postgres-chat-store.integration.spec.ts` uses the shared one. `app.e2e.spec.ts` swaps in `InMemoryChatStore` to stay fast; `app.postgres.e2e.spec.ts` runs the real `AppModule` on Postgres, including a server restart.
 
 ```bash
 pnpm test

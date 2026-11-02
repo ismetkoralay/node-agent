@@ -1,11 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
-import { ProviderError } from '@node-agent/core';
+import { InMemoryChatStore, ProviderError } from '@node-agent/core';
 import { FakeProvider, textResponse, toolCallResponse } from '@node-agent/core/testing';
 import { getLoggerToken } from 'nestjs-pino';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
-import { LLM_PROVIDER } from './agent/tokens.ts';
+import { CHAT_STORE, LLM_PROVIDER } from './agent/tokens.ts';
 import { AppModule } from './app.module.ts';
 import {
   conversationResponseSchema,
@@ -53,7 +53,9 @@ describe('App', () => {
       .overrideProvider(EnvService)
       .useValue({ get: (key: string) => env[key] })
       .overrideProvider(getLoggerToken(''))
-      .useValue(logger);
+      .useValue(logger)
+      .overrideProvider(CHAT_STORE)
+      .useValue(new InMemoryChatStore());
     const moduleRef = await override(builder).compile();
     app = moduleRef.createNestApplication();
     setupSwagger(app);
@@ -427,6 +429,125 @@ describe('App', () => {
     });
   });
 
+  describe('list conversations', () => {
+    type Page = {
+      conversations: { id: string; title?: string; updatedAt: string; messageCount: number }[];
+      nextCursor: string | null;
+    };
+
+    async function list(query = ''): Promise<Response> {
+      return fetch(`${baseUrl}/v1/conversations${query}`);
+    }
+
+    /** Creates `count` conversations one after another, so the last one is the newest. */
+    async function createMany(count: number): Promise<string[]> {
+      const ids: string[] = [];
+      for (let i = 0; i < count; i++) ids.push(await createConversation());
+      return ids;
+    }
+
+    test('an empty server lists nothing', async () => {
+      await start(new FakeProvider([]));
+
+      const res = await list();
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toStrictEqual({ conversations: [], nextCursor: null });
+    });
+
+    test('lists the conversation that was updated last first, with its title and message count', async () => {
+      await start(new FakeProvider([textResponse('hi there')]));
+      const [older, newer] = await createMany(2);
+
+      await send(older as string, 'Tell me a joke about databases');
+
+      const page = (await (await list()).json()) as Page;
+      expect(page.conversations.map((c) => c.id)).toStrictEqual([older, newer]);
+      expect(page.conversations[0]).toStrictEqual({
+        id: older,
+        title: 'Tell me a joke about databases',
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
+        messageCount: 2,
+      });
+      expect(page.conversations[1]).toMatchObject({ id: newer, messageCount: 0 });
+      expect(page.conversations[1]).not.toHaveProperty('title');
+    });
+
+    test('with 25 conversations, limit=20 gives 20 and a cursor, and the cursor gives 5 and null', async () => {
+      await start(new FakeProvider([]));
+      const ids = await createMany(25);
+
+      const first = (await (await list('?limit=20')).json()) as Page;
+      const second = (await (
+        await list(`?limit=20&cursor=${encodeURIComponent(first.nextCursor ?? '')}`)
+      ).json()) as Page;
+
+      expect(first.conversations).toHaveLength(20);
+      expect(first.nextCursor).toEqual(expect.any(String));
+      expect(second.conversations).toHaveLength(5);
+      expect(second.nextCursor).toBeNull();
+      expect([...first.conversations, ...second.conversations].map((c) => c.id)).toStrictEqual(
+        [...ids].reverse(),
+      );
+    });
+
+    test('a conversation created without a title is titled from its first message', async () => {
+      await start(new FakeProvider([textResponse('ok')]));
+      const id = await createConversation();
+
+      await send(id, `  ${'word '.repeat(30)}`);
+
+      const { conversations } = (await (await list()).json()) as Page;
+      expect(conversations[0]?.title).toBe(`${'word '.repeat(10)}`.trim());
+      expect(conversations[0]?.title).toHaveLength(49);
+    });
+
+    test('a title given at creation is not replaced by the first message', async () => {
+      await start(new FakeProvider([textResponse('ok')]));
+      const created = await fetch(`${baseUrl}/v1/conversations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Mine' }),
+      });
+      const { id } = (await created.json()) as { id: string };
+
+      await send(id, 'something else');
+
+      const { conversations } = (await (await list()).json()) as Page;
+      expect(conversations[0]?.title).toBe('Mine');
+    });
+
+    test.each([
+      ['limit=0', 'limit'],
+      ['limit=101', 'limit'],
+      ['limit=abc', 'limit'],
+      ['cursor=', 'cursor'],
+    ])('?%s is a validation_error on the %s path', async (query, path) => {
+      await start(new FakeProvider([]));
+
+      const body = await expectError(await list(`?${query}`), 400, 'validation_error');
+
+      expect(body.error.details).toMatchObject([{ path }]);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    test('a cursor the server did not issue is an invalid_cursor error, not a 500', async () => {
+      await start(new FakeProvider([]));
+
+      await expectError(await list('?cursor=not-a-cursor'), 400, 'invalid_cursor');
+
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    test('a request id header is set on the response', async () => {
+      await start(new FakeProvider([]));
+
+      const res = await list();
+
+      expect(res.headers.get('x-request-id')).toEqual(expect.any(String));
+    });
+  });
+
   describe('serializer', () => {
     test('every happy path response parses with its own response schema', async () => {
       await start(new FakeProvider([textResponse('hi')]));
@@ -485,7 +606,18 @@ describe('App', () => {
 
   describe('swagger', () => {
     type Operation = {
-      parameters?: { name: string; schema?: { format?: string } }[];
+      parameters?: {
+        name: string;
+        in?: string;
+        required?: boolean;
+        schema?: {
+          format?: string;
+          type?: string;
+          minimum?: number;
+          maximum?: number;
+          default?: number;
+        };
+      }[];
       requestBody?: { required?: boolean; content: Record<string, { schema: unknown }> };
       responses: Record<string, { content?: Record<string, { schema: unknown }> }>;
     };
@@ -525,7 +657,7 @@ describe('App', () => {
       expect(json.status).toBe(200);
     });
 
-    test('documents the four endpoints', async () => {
+    test('documents the five endpoints', async () => {
       const doc = await openApi();
 
       const operations = Object.entries(doc.paths)
@@ -537,6 +669,7 @@ describe('App', () => {
           'GET /v1/conversations/{id}/messages',
           'POST /v1/conversations',
           'POST /v1/conversations/{id}/messages',
+          'GET /v1/conversations',
         ].sort(),
       );
     });
@@ -566,6 +699,45 @@ describe('App', () => {
 
       const op = doc.paths['/v1/conversations/{id}']?.get;
       expect(op?.parameters?.find((p) => p.name === 'id')?.schema?.format).toBe('uuid');
+    });
+
+    test('the list endpoint documents limit and cursor as optional query parameters', async () => {
+      const doc = await openApi();
+
+      const parameters = doc.paths['/v1/conversations']?.get?.parameters ?? [];
+      const limit = parameters.find((p) => p.name === 'limit');
+      const cursor = parameters.find((p) => p.name === 'cursor');
+      expect(limit).toMatchObject({
+        in: 'query',
+        required: false,
+        schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+      });
+      expect(cursor).toMatchObject({ in: 'query', required: false, schema: { type: 'string' } });
+    });
+
+    test('the list response documents a nullable nextCursor and date-time updatedAt', async () => {
+      const doc = await openApi();
+
+      const response = doc.paths['/v1/conversations']?.get?.responses['200'];
+      if (!response) throw new Error('no 200 response documented');
+      const schema = jsonSchema(doc, response) as {
+        properties: { conversations: { items: unknown }; nextCursor: unknown };
+        required: string[];
+      };
+      const item = resolve(doc, schema.properties.conversations.items) as {
+        properties: Record<string, unknown>;
+        required: string[];
+      };
+      expect(JSON.stringify(schema.properties.nextCursor)).toContain('null');
+      expect(schema.required).toContain('nextCursor');
+      expect(item.properties).toMatchObject({ updatedAt: { type: 'string', format: 'date-time' } });
+      expect(Object.keys(item.properties).sort()).toStrictEqual([
+        'id',
+        'messageCount',
+        'title',
+        'updatedAt',
+      ]);
+      expect(item.required).not.toContain('title');
     });
 
     test('send message documents 400, 404, 409 and 502 with the error envelope', async () => {

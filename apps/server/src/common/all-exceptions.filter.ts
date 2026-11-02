@@ -5,7 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { ConversationNotFoundError, ProviderError } from '@node-agent/core';
+import { ConversationNotFoundError, InvalidCursorError, ProviderError } from '@node-agent/core';
 import type { Request, Response } from 'express';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { ConversationBusyError } from '../chat/conversation-busy.error.ts';
@@ -54,6 +54,9 @@ export function mapException(exception: unknown): MappedException {
       code: 'conversation_not_found',
       message: exception.message,
     };
+  }
+  if (exception instanceof InvalidCursorError) {
+    return { status: HttpStatus.BAD_REQUEST, code: 'invalid_cursor', message: exception.message };
   }
   if (exception instanceof ConversationBusyError) {
     return { status: HttpStatus.CONFLICT, code: 'conversation_busy', message: exception.message };

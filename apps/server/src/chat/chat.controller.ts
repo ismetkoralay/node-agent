@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ApiResult } from '../common/http.helpers.ts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.ts';
 import {
   type ConversationDto,
+  type ConversationListDto,
+  conversationListResponseSchema,
   conversationResponseSchema,
   errorResponseSchema,
   type MessagesResponseDto,
@@ -15,6 +17,8 @@ import {
   type CreateConversationDto,
   conversationIdSchema,
   createConversationSchema,
+  type GetConversationsDto,
+  getConversationsSchema,
   type SendMessageDto,
   sendMessageSchema,
 } from './chat.schemas.ts';
@@ -28,7 +32,7 @@ const idParam = {
 @ApiTags('conversations')
 @ApiResponse({
   status: 400,
-  description: 'validation_error: the body or the id is invalid',
+  description: 'validation_error: the body, the id or the query parameters are invalid',
   standardSchema: errorResponseSchema,
 })
 @Controller('v1/conversations')
@@ -63,6 +67,29 @@ export class ChatController {
   })
   async getConversation(@Param('id', idParam) id: string): Promise<ConversationDto> {
     return await this.chatService.getConversation(id);
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: 'List conversations',
+    description:
+      'Most recently updated first, one page at a time. While `nextCursor` is not `null`, ' +
+      'pass it as `cursor` to get the next page.',
+  })
+  @ApiResult(200, 'One page of conversations, latest updated first', conversationListResponseSchema)
+  @ApiResponse({
+    status: 400,
+    description: 'invalid_cursor: the cursor was not issued by this server',
+    standardSchema: errorResponseSchema,
+  })
+  async listConversations(
+    @Query({
+      schema: getConversationsSchema,
+      pipes: [new ZodValidationPipe(getConversationsSchema)],
+    })
+    query: GetConversationsDto,
+  ): Promise<ConversationListDto> {
+    return await this.chatService.listConversations(query.limit, query.cursor);
   }
 
   @Post('/:id/messages')
