@@ -1,4 +1,4 @@
-export type { ChatRequest, ChatResponse } from './chat.ts';
+export type { ChatChunk, ChatRequest, ChatResponse } from './chat.ts';
 export type {
   AssistantMessage,
   Message,
