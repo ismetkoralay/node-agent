@@ -1,5 +1,5 @@
 import type { AssistantMessage, Message } from './message.ts';
-import type { ToolDefinition } from './tool.ts';
+import type { ToolCall, ToolDefinition } from './tool.ts';
 
 /** A provider-neutral chat completion request. */
 export type ChatRequest = {
@@ -17,3 +17,16 @@ export type ChatResponse = {
   finishReason: 'stop' | 'tool_calls' | 'length';
   usage?: { promptTokens: number; completionTokens: number };
 };
+
+/**
+ * One piece of a streamed answer. A stream is any number of `text.delta` (new text only, not
+ * cumulative) and `tool_call` chunks, followed by exactly one `finish`, which is always last.
+ * A `tool_call` is complete: its `arguments` are the full JSON string, never a fragment.
+ */
+export type ChatChunk =
+  | { type: 'text.delta'; text: string }
+  | { type: 'tool_call'; toolCall: ToolCall }
+  | { type: 'finish'; finishReason: ChatResponse['finishReason']; usage?: ChatResponse['usage'] };
+
+/** The terminating chunk of a stream; internal helper, deliberately not part of the public API. */
+export type FinishChunk = Extract<ChatChunk, { type: 'finish' }>;
