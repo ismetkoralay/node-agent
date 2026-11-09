@@ -1,8 +1,8 @@
-import type { ChatRequest, ChatResponse, LLMProvider } from '@node-agent/core';
+import type { ChatChunk, ChatRequest, ChatResponse, LLMProvider } from '@node-agent/core';
 import { ProviderError } from '@node-agent/core';
-import { Ollama, type ChatResponse as OllamaResponse } from 'ollama';
+import { type AbortableAsyncIterator, Ollama, type ChatResponse as OllamaResponse } from 'ollama';
 import { PROVIDER_NAME } from './constants.ts';
-import { fromOllamaResponse, toOllamaRequest } from './mapping.ts';
+import { createChunkMapper, fromOllamaResponse, toOllamaRequest } from './mapping.ts';
 
 /** Constructor options for `OllamaProvider`. */
 export type OllamaProviderOptions = {
@@ -12,7 +12,7 @@ export type OllamaProviderOptions = {
   client?: Pick<Ollama, 'chat'>;
 };
 
-/** `LLMProvider` backed by a local or remote Ollama server. Plain chat only. */
+/** `LLMProvider` backed by a local or remote Ollama server. Plain chat, plus streaming of the answer. */
 export class OllamaProvider implements LLMProvider {
   readonly name = PROVIDER_NAME;
 
@@ -42,6 +42,66 @@ export class OllamaProvider implements LLMProvider {
     }
 
     return fromOllamaResponse(res);
+  }
+
+  async *stream(request: ChatRequest, opts?: { signal?: AbortSignal }): AsyncGenerator<ChatChunk> {
+    const signal = opts?.signal;
+    signal?.throwIfAborted();
+    // Outside the try: a request we cannot translate is our error, not a failure to reach Ollama.
+    const ollamaRequest = { ...toOllamaRequest(request), stream: true as const };
+    const mapper = createChunkMapper();
+    const abortWatch = signal ? watchAbort(signal) : undefined;
+    let parts: AbortableAsyncIterator<OllamaResponse> | undefined;
+    let onAbort: (() => void) | undefined;
+    let finished = false;
+    try {
+      const call = this.#client.chat(ollamaRequest);
+      try {
+        // The headers only arrive with Ollama's first byte, which can take seconds while a model loads.
+        parts = await (abortWatch ? Promise.race([call, abortWatch.rejection]) : call);
+      } catch (err) {
+        // If abort won the race the request is still in flight: close it whenever it does answer.
+        call.then(
+          (late) => late.abort(),
+          () => {},
+        );
+        throw err;
+      } finally {
+        abortWatch?.dispose();
+      }
+
+      // The client takes no per-request signal, so an abort has to cut the connection itself.
+      const open = parts;
+      if (signal) {
+        onAbort = () => open.abort();
+        signal.addEventListener('abort', onAbort, { once: true });
+        signal.throwIfAborted();
+      }
+
+      for await (const part of open) {
+        for (const chunk of mapper(part)) {
+          if (chunk.type === 'finish') finished = true;
+          yield chunk;
+        }
+      }
+      // A cut connection ends the iterator quietly; the contract promises a `finish` chunk.
+      if (!finished && !signal?.aborted) {
+        throw new ProviderError('Ollama stream ended before the final part', {
+          provider: PROVIDER_NAME,
+          retryable: true,
+        });
+      }
+    } catch (err) {
+      if (signal?.aborted) throw signal.reason;
+      if (err instanceof ProviderError) throw err;
+      throw toProviderError(err, request.model);
+    } finally {
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
+      // `break` alone leaves the HTTP request open and Ollama generating, so always close it.
+      parts?.abort();
+    }
+    // An abort that ends the iterator quietly must not look like a normal end.
+    signal?.throwIfAborted();
   }
 }
 

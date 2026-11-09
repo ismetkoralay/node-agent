@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "hello": "node --env-file-if-exists=.env scripts/hello.ts",
+    "stream": "node --env-file-if-exists=.env scripts/stream.ts",
     "chat": "node --env-file-if-exists=.env scripts/chat.ts"
   },
   "author": "Ismet Koralay",

@@ -1,4 +1,5 @@
 import {
+  type ChatChunk,
   type ChatRequest,
   type Message,
   ProviderError,
@@ -6,7 +7,7 @@ import {
 } from '@node-agent/core';
 import type { ChatResponse as OllamaResponse } from 'ollama';
 import { describe, expect, test } from 'vitest';
-import { fromOllamaResponse, toOllamaRequest } from './mapping.ts';
+import { createChunkMapper, fromOllamaResponse, toOllamaRequest } from './mapping.ts';
 
 const getCurrentTime: ToolDefinition = {
   type: 'function',
@@ -276,6 +277,22 @@ describe('fromOllamaResponse', () => {
       expect(out.message.tool_calls?.[0]?.id).toMatch(/^call_.+/);
     });
 
+    test('empty text next to a tool call becomes content: null', () => {
+      const out = fromOllamaResponse(withCalls({ name: 'a', arguments: {} }));
+      expect(out.message.content).toBeNull();
+    });
+
+    test('text next to a tool call is kept', () => {
+      const res = withCalls({ name: 'a', arguments: {} });
+      res.message.content = 'Checking.';
+      expect(fromOllamaResponse(res).message.content).toBe('Checking.');
+    });
+
+    test('empty text without a tool call stays an empty string', () => {
+      const out = fromOllamaResponse(base({ message: { role: 'assistant', content: '' } }));
+      expect(out.message.content).toBe('');
+    });
+
     test('omits tool_calls when the model made none', () => {
       expect(fromOllamaResponse(base({})).message).not.toHaveProperty('tool_calls');
     });
@@ -294,5 +311,150 @@ describe('fromOllamaResponse', () => {
       );
       expect(back.message.tool_calls).toEqual([{ ...original, id: 'call_new' }]);
     });
+  });
+});
+
+describe('createChunkMapper', () => {
+  const part = (over: Partial<OllamaResponse> & { content?: string }): OllamaResponse => {
+    const {
+      content = '',
+      tool_calls,
+      ...rest
+    } = over as Partial<OllamaResponse> & {
+      content?: string;
+      tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
+    };
+    return {
+      model: 'm',
+      message: { role: 'assistant', content, ...(tool_calls && { tool_calls }) },
+      done: false,
+      ...rest,
+    } as OllamaResponse;
+  };
+  const doneAfter = (over: Partial<OllamaResponse> = {}) =>
+    part({ done: true, done_reason: 'stop', prompt_eval_count: 11, eval_count: 7, ...over });
+
+  const run = (parts: OllamaResponse[], generateId?: () => string): ChatChunk[] => {
+    const map = createChunkMapper(generateId);
+    return parts.flatMap((p) => [...map(p)]);
+  };
+
+  test('a text part becomes a text.delta', () => {
+    expect(run([part({ content: 'Hel' })])).toEqual([{ type: 'text.delta', text: 'Hel' }]);
+  });
+
+  test('keeps the text deltas in order and ends with one finish carrying usage', () => {
+    const chunks = run([part({ content: 'Hel' }), part({ content: 'lo' }), doneAfter()]);
+
+    expect(chunks).toEqual([
+      { type: 'text.delta', text: 'Hel' },
+      { type: 'text.delta', text: 'lo' },
+      { type: 'finish', finishReason: 'stop', usage: { promptTokens: 11, completionTokens: 7 } },
+    ]);
+  });
+
+  test('a part with no text and no tool calls yields nothing', () => {
+    expect(run([part({})])).toEqual([]);
+  });
+
+  test('text in the done part is yielded before the finish chunk', () => {
+    expect(run([doneAfter({ content: 'end.' } as never)])).toEqual([
+      { type: 'text.delta', text: 'end.' },
+      { type: 'finish', finishReason: 'stop', usage: { promptTokens: 11, completionTokens: 7 } },
+    ]);
+  });
+
+  test('a tool call becomes a complete tool_call chunk with a generated id and JSON arguments', () => {
+    const chunks = run(
+      [
+        part({
+          tool_calls: [{ function: { name: 'get_current_time', arguments: { timezone: 'UTC' } } }],
+        } as never),
+      ],
+      () => 'call_abc',
+    );
+
+    expect(chunks).toEqual([
+      {
+        type: 'tool_call',
+        toolCall: {
+          id: 'call_abc',
+          type: 'function',
+          function: { name: 'get_current_time', arguments: '{"timezone":"UTC"}' },
+        },
+      },
+    ]);
+  });
+
+  test('two tool calls in one part get distinct ids', () => {
+    const chunks = run([
+      part({
+        tool_calls: [
+          { function: { name: 'a', arguments: {} } },
+          { function: { name: 'b', arguments: {} } },
+        ],
+      } as never),
+    ]);
+
+    const ids = chunks.flatMap((c) => (c.type === 'tool_call' ? [c.toolCall.id] : []));
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  test('finishes with tool_calls although the done part carries none', () => {
+    const chunks = run([
+      part({ tool_calls: [{ function: { name: 'a', arguments: {} } }] } as never),
+      doneAfter(),
+    ]);
+
+    expect(chunks.map((c) => c.type)).toEqual(['tool_call', 'finish']);
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', finishReason: 'tool_calls' });
+  });
+
+  test('a tool call in the done part itself also finishes with tool_calls', () => {
+    const chunks = run([
+      doneAfter({ tool_calls: [{ function: { name: 'a', arguments: {} } }] } as never),
+    ]);
+
+    expect(chunks.map((c) => c.type)).toEqual(['tool_call', 'finish']);
+    expect(chunks.at(-1)).toMatchObject({ finishReason: 'tool_calls' });
+  });
+
+  test('without a tool call the finish reason follows done_reason', () => {
+    expect(run([doneAfter({ done_reason: 'length' })]).at(-1)).toMatchObject({
+      finishReason: 'length',
+    });
+  });
+
+  test('the tool call memory belongs to one mapper, not to the module', () => {
+    const withCall = createChunkMapper();
+    [...withCall(part({ tool_calls: [{ function: { name: 'a', arguments: {} } }] } as never))];
+    const fresh = createChunkMapper();
+
+    expect([...fresh(doneAfter())].at(-1)).toMatchObject({ finishReason: 'stop' });
+  });
+
+  test('omits usage when the counts are missing', () => {
+    const finish = run([
+      doneAfter({ prompt_eval_count: undefined, eval_count: undefined } as never),
+    ]).at(-1);
+
+    expect(finish).toEqual({ type: 'finish', finishReason: 'stop' });
+    expect(finish).not.toHaveProperty('usage');
+  });
+
+  test('an unknown done_reason is a non-retryable ProviderError', () => {
+    const act = () => run([doneAfter({ done_reason: 'weird' })]);
+
+    expect(act).toThrow(ProviderError);
+    expect(act).toThrow(expect.objectContaining({ provider: 'ollama', retryable: false }));
+  });
+
+  test('default id generator yields call_-prefixed ids', () => {
+    const chunks = run([
+      part({ tool_calls: [{ function: { name: 'a', arguments: {} } }] } as never),
+    ]);
+
+    expect(chunks[0]).toMatchObject({ toolCall: { id: expect.stringMatching(/^call_.+/) } });
   });
 });

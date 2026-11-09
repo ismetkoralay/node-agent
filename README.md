@@ -76,6 +76,8 @@ pnpm hello "<message_here>"
 - This command will trigger ollama call and afterwards the result will be visible on console.
 - If the message is empty, it'll trigger ollama with a default message.
 
+`pnpm stream "<message_here>"` does the same through `OllamaProvider.stream()`: the answer is printed piece by piece as the model produces it, followed by the finish reason, token counts and elapsed time. It reads the same `.env` values. With `--tool` (`pnpm stream --tool "<message_here>"`) the model is also offered the `get_current_time` tool; a question like "What time is it in Istanbul?" then prints a `[tool_call]` line and ends with `finishReason: tool_calls`.
+
 ### Alternative ollama setup
 
 docker-compose.yml file also has an ollama service defined.

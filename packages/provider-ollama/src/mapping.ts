@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  type ChatChunk,
   type ChatRequest,
   type ChatResponse,
   type Message,
@@ -29,6 +30,32 @@ export function toOllamaRequest(req: ChatRequest): OllamaRequest & { stream: fal
     messages: req.messages.map(toOllamaMessage),
     ...(req.tools && { tools: req.tools.map(mapTools) }),
     ...(Object.keys(options).length > 0 && { options }),
+  };
+}
+
+/**
+ * Builds a mapper from one streamed Ollama part to the chunks it carries. It is stateful because
+ * Ollama sends tool calls in a part *before* the final `done` part, which itself carries none:
+ * only by remembering that a call went by can the `finish` chunk say `tool_calls`.
+ * Use one mapper per stream.
+ */
+export function createChunkMapper(generateId: () => string = defaultGenerateId) {
+  let sawToolCall = false;
+  return function* map(part: OllamaResponse): Generator<ChatChunk, void, undefined> {
+    if (part.message.content !== '') {
+      yield { type: 'text.delta', text: part.message.content };
+    }
+    for (const call of part.message.tool_calls ?? []) {
+      sawToolCall = true;
+      yield { type: 'tool_call', toolCall: fromOllamaToolCall(call, generateId) };
+    }
+    if (part.done) {
+      yield {
+        type: 'finish',
+        finishReason: sawToolCall ? 'tool_calls' : extractFinishReason(part),
+        ...usageOf(part),
+      };
+    }
   };
 }
 
@@ -108,27 +135,33 @@ export function fromOllamaResponse(
   res: OllamaResponse,
   generateId: () => string = defaultGenerateId,
 ): ChatResponse {
-  const response: ChatResponse = {
+  const toolCalls = res.message.tool_calls ?? [];
+  return {
     message: {
       role: 'assistant',
-      content: res.message.content,
-      ...(res.message.tool_calls?.length && {
-        tool_calls: res.message.tool_calls.map((call) => ({
-          id: generateId(),
-          type: 'function',
-          function: {
-            name: call.function.name,
-            arguments: JSON.stringify(call.function.arguments),
-          },
-        })),
+      // Same rule as `collectStream`, so the store gets one shape whichever way the answer arrived.
+      content: toolCalls.length > 0 && res.message.content === '' ? null : res.message.content,
+      ...(toolCalls.length > 0 && {
+        tool_calls: toolCalls.map((call) => fromOllamaToolCall(call, generateId)),
       }),
     },
     finishReason: extractFinishReason(res),
+    ...usageOf(res),
   };
-  if (typeof res.prompt_eval_count === 'number' && typeof res.eval_count === 'number') {
-    response.usage = { promptTokens: res.prompt_eval_count, completionTokens: res.eval_count };
-  }
-  return response;
+}
+
+function fromOllamaToolCall(call: OllamaToolCall, generateId: () => string): ToolCall {
+  return {
+    id: generateId(),
+    type: 'function',
+    function: { name: call.function.name, arguments: JSON.stringify(call.function.arguments) },
+  };
+}
+
+function usageOf(res: OllamaResponse): Pick<ChatResponse, 'usage'> {
+  return typeof res.prompt_eval_count === 'number' && typeof res.eval_count === 'number'
+    ? { usage: { promptTokens: res.prompt_eval_count, completionTokens: res.eval_count } }
+    : {};
 }
 
 function defaultGenerateId(): string {
